@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Medicine Expiry Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial; max-width: 900px; margin: 40px auto; padding: 20px; background: #f0f2f5; }
+    h1 { color: #2c3e50; margin-bottom: 5px; }
+    h2 { color: #2c3e50; margin: 25px 0 10px; }
+    #account { color: #7f8c8d; font-size: 13px; margin-bottom: 15px; }
+    #status { margin: 10px 0; font-weight: bold; font-size: 14px; }
+    .input-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    input { padding: 10px; border: 1px solid #ccc; border-radius: 5px; width: 200px; font-size: 14px; }
+    button { padding: 10px 20px; background: #2ecc71; color: white; border: none; cursor: pointer; border-radius: 5px; font-size: 14px; }
+    button:hover { background: #27ae60; }
+    .refresh-btn { background: #3498db; margin-bottom: 10px; }
+    .refresh-btn:hover { background: #2980b9; }
+    table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    th { padding: 12px 15px; background: #2c3e50; color: white; text-align: left; }
+    td { padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 14px; }
+    .status-badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+    .expired { background: #fdecea; }
+    .expired .status-badge { background: #e74c3c; color: white; }
+    .expiring-soon { background: #fef9e7; }
+    .expiring-soon .status-badge { background: #f39c12; color: white; }
+    .good { background: #eafaf1; }
+    .good .status-badge { background: #2ecc71; color: white; }
+    .legend { display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+    .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+  </style>
+</head>
+<body>
+
+  <h1>💊 Medicine Expiry Tracker</h1>
+  <p id="account">Connecting to MetaMask...</p>
+  <p id="status"></p>
+
+  <h2>Add Medicine</h2>
+  <div class="input-group">
+    <input type="text" id="medicineName" placeholder="Medicine Name" />
+    <input type="month" id="expiryDate" />
+    <button onclick="addMedicine()">Add to Blockchain</button>
+  </div>
+
+  <h2>All Medicines</h2>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#2ecc71"></div> Good</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f39c12"></div> Expiring within 3 months</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div> Expired</div>
+  </div>
+
+  <button class="refresh-btn" onclick="loadMedicines()">🔄 Refresh List</button>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Expiry Date</th>
+        <th>Added By</th>
+        <th>Added On</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="medicineList"></tbody>
+  </table>
+
+  <script>
+    let web3;
+    let contract;
+    let account;
+
+    const contractAddress = "0x0B12AfEfCbFf8BBc7B78689Cfe851f2c8fbB31e5";
+
+    const abi = [
+      {
+        "inputs": [{"internalType": "string","name": "_name","type": "string"},{"internalType": "string","name": "_expiryDate","type": "string"}],
+        "name": "addMedicine",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      },
+      {
+        "inputs": [{"internalType": "uint256","name": "_id","type": "uint256"}],
+        "name": "getMedicine",
+        "outputs": [
+          {"internalType": "uint256","name": "","type": "uint256"},
+          {"internalType": "string","name": "","type": "string"},
+          {"internalType": "string","name": "","type": "string"},
+          {"internalType": "address","name": "","type": "address"},
+          {"internalType": "uint256","name": "","type": "uint256"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
+        "inputs": [],
+        "name": "medicineCount",
+        "outputs": [{"internalType": "uint256","name": "","type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+      }
+    ];
+
+    window.addEventListener('load', async () => {
+      if (window.ethereum) {
+        web3 = new Web3(window.ethereum);
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const accounts = await web3.eth.getAccounts();
+        account = accounts[0];
+        document.getElementById('account').innerText = "Connected: " + account;
+        contract = new web3.eth.Contract(abi, contractAddress);
+        loadMedicines();
+      } else {
+        alert("Please install MetaMask!");
+      }
+    });
+
+    function getExpiryStatus(expiryStr) {
+      let year, month;
+      if (expiryStr.includes('-')) {
+        [year, month] = expiryStr.split('-').map(Number);
+      } else {
+        [month, year] = expiryStr.split('/').map(Number);
+      }
+      const expiry = new Date(year, month - 1, 1);
+      const today = new Date();
+      const threeMonthsLater = new Date();
+      threeMonthsLater.setMonth(today.getMonth() + 3);
+
+      if (expiry < today) {
+        return { class: 'expired', label: '❌ EXPIRED' };
+      } else if (expiry <= threeMonthsLater) {
+        return { class: 'expiring-soon', label: '⚠️ EXPIRING SOON' };
+      } else {
+        return { class: 'good', label: '✅ GOOD' };
+      }
+    }
+
+    function formatExpiry(expiryStr) {
+      // Handle both YYYY-MM and MM/YYYY formats
+      if (expiryStr.includes('-')) {
+        const [year, month] = expiryStr.split('-');
+        return month + '/' + year;
+      }
+      return expiryStr;
+    }
+
+    async function addMedicine() {
+      const name = document.getElementById('medicineName').value;
+      const expiry = document.getElementById('expiryDate').value; // YYYY-MM format
+      if (!name || !expiry) { alert("Fill both fields!"); return; }
+      document.getElementById('status').innerText = "⏳ Adding to blockchain...";
+      document.getElementById('status').style.color = "orange";
+      await contract.methods.addMedicine(name, expiry).send({ from: account });
+      document.getElementById('status').innerText = "✅ Medicine added successfully!";
+      document.getElementById('status').style.color = "green";
+      document.getElementById('medicineName').value = '';
+      document.getElementById('expiryDate').value = '';
+      loadMedicines();
+    }
+
+    async function loadMedicines() {
+      const count = await contract.methods.medicineCount().call();
+      const tbody = document.getElementById('medicineList');
+      tbody.innerHTML = '';
+
+      if (count == 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No medicines added yet</td></tr>';
+        return;
+      }
+
+      for (let i = 1; i <= count; i++) {
+        const m = await contract.methods.getMedicine(i).call();
+        const addedOn = new Date(m[4] * 1000).toLocaleDateString();
+        const expiryStr = m[2];
+        const status = getExpiryStatus(expiryStr);
+        const formattedExpiry = formatExpiry(expiryStr);
+
+        tbody.innerHTML += `
+          <tr class="${status.class}">
+            <td>${m[0]}</td>
+            <td><strong>${m[1]}</strong></td>
+            <td>${formattedExpiry}</td>
+            <td>${m[3].substring(0, 6)}...${m[3].substring(38)}</td>
+            <td>${addedOn}</td>
+            <td><span class="status-badge">${status.label}</span></td>
+          </tr>`;
+      }
+    }
+  </script>
+
+</body>
+</html>
