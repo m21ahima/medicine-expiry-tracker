@@ -87,7 +87,7 @@ Make sure MetaMask is connected to Localhost 7545
 ## 📸 Screenshots
 
 ![DApp](screenshots/dapp.png)
-![Ganache Blocks](screenshots/ganache.png)
+![Ganache Blocks](screenshots/ganacheblocks1.png)
 
 ## 🌍 Future Enhancements
 
