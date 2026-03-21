@@ -107,7 +107,3 @@ This project is licensed under the MIT License.
 
 Mahima
 ```
-
-git add .
-git commit -m "Improved README"
-git push
